@@ -196,7 +196,7 @@ pub fn coerce_ref<'a, T: ?Sized, U: ?Sized>(t: &'a T, ev: TypeEq<T, U>) -> &'a U
     substitute::<_, _, RefF>(t, ev)
 }
 
-/// Implements the [`TypeFunction`] `ApF<MutRefF<'a>, A> == &'a mut A`
+/// The [`TypeFunction`] `ApF<MutRefF<'a>, A> == &'a mut A`
 pub struct MutRefF<'a>(PhantomData<&'a ()>);
 impl<'a, A: ?Sized + 'a> TypeFunction<A> for MutRefF<'a> {
     type Result = &'a mut A;
@@ -215,7 +215,7 @@ pub fn coerce_mut<'a, T: ?Sized, U: ?Sized>(t: &'a mut T, ev: TypeEq<T, U>) -> &
     substitute::<_, _, MutRefF>(t, ev)
 }
 
-/// Implements the [`TypeFunction`] `ApF<SliceF<N>, A> == [A; N]`
+/// The [`TypeFunction`] `ApF<SliceF<N>, A> == [A; N]`
 pub struct SliceF<const N: usize>(PhantomData<*const [(); N]>);
 impl<A, const N: usize> TypeFunction<A> for SliceF<N> {
     type Result = [A; N];
@@ -343,7 +343,7 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
 impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     /// Use the observed equality to call the consumer to compute a result.
     ///
-    /// Consider using once of [`TypeEq::coerce`] or [`TypeEq::lift_through`] first.
+    /// Consider using either [`TypeEq::coerce`] or [`TypeEq::lift_through`] first.
     #[inline(always)]
     pub fn use_eq<C: Consumer<T, U>>(self, c: C) -> C::Result {
         use_kernel_eq(self._inner, c)
