@@ -6,8 +6,6 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
-#![cfg_attr(test, allow(soft_unstable))]
-#![cfg_attr(test, feature(test))]
 #![feature(unsized_fn_params)]
 #![feature(const_fn_trait_bound)]
 #![warn(missing_docs, missing_crate_level_docs)]
@@ -20,12 +18,14 @@
 extern crate core;
 use core::marker::PhantomData;
 
-#[cfg(feature = "std")]
+#[cfg(not(feature = "std"))]
+core::compile_error!(
+    "Currently core-only is not supported, but reserved for the future. The reason is technical, internally
+    Box is used to do a transmute of trait objects. If you know how to work around this, please open an issue.
+    For the meanwhile, 'alloc' has to be available.");
 extern crate alloc;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
-#[cfg(test)]
-extern crate test;
 
 use crate::kernel::{refl as refl_kernel, use_eq as use_kernel_eq, TheEq};
 
@@ -151,7 +151,7 @@ impl<A: ?Sized> TypeFunction<A> for IdF {
 /// # use type_equalities::{coerce, refl};
 /// assert_eq!(coerce(42, refl()), 42);
 /// ```
-#[inline]
+#[inline(always)]
 pub fn coerce<T, U>(t: T, ev: TypeEq<T, U>) -> U {
     substitute::<_, _, IdF>(t, ev)
 }
@@ -300,7 +300,7 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
         self::trivial_eq()
     }
     /// Same as [`crate::substitute`].
-    #[inline]
+    #[inline(always)]
     pub fn substitute<F: TypeFunction<T> + TypeFunction<U>>(self, t: ApF<F, T>) -> ApF<F, U>
     where
         ApF<F, T>: Sized,
@@ -316,7 +316,7 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     /// # use type_equalities::refl;
     /// assert_eq!(refl().coerce(42), 42);
     /// ```
-    #[inline]
+    #[inline(always)]
     pub fn coerce(self, t: T) -> U
     where
         T: Sized,
@@ -353,14 +353,8 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
 
 mod kernel {
     use super::Consumer;
-    #[cfg(feature = "std")]
     use alloc::boxed::Box;
     use core::marker::PhantomData;
-    #[cfg(not(feature = "std"))]
-    core::compile_error!(
-        "Currently core-only is not supported, but reserved for the future. The reason is technical, internally
-        Box is used to do a transmute of trait objects. If you know how to work around this, please open an issue.
-        For the meanwhile, 'alloc' has to be available.");
 
     pub(crate) struct TheEq<T: ?Sized, U: ?Sized> {
         _phantomt: PhantomData<*const T>,
@@ -444,26 +438,5 @@ mod test {
         assert_eq!(test_type_eq::<&i32, &i32>(&0).copied(), Some(0));
         assert_eq!(test_type_eq::<&i32, i32>(&0), None);
         assert_eq!(test_type_eq::<i32, u32>(0), None);
-    }
-}
-
-#[cfg(all(test, feature = "std"))]
-mod benches {
-    use super::*;
-    use test::Bencher;
-
-    // Must still fit on the stack.
-    const BENCH_LEN: usize = 100_000;
-    const THE_ARRAY: [u32; BENCH_LEN] = [0; BENCH_LEN];
-
-    #[bench]
-    fn bench_no_coerce(b: &mut Bencher) {
-        b.iter(|| THE_ARRAY);
-    }
-
-    #[bench]
-    fn bench_coerce_array_refl(b: &mut Bencher) {
-        let eq = refl::<u32>().lift_through::<SliceF<BENCH_LEN>>();
-        b.iter(|| eq.coerce(THE_ARRAY));
     }
 }
