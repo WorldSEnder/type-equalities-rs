@@ -23,13 +23,13 @@ impl<T: ?Sized> AliasSelf for T {
     type Alias = T;
 }
 
-/// Equality at a constraint level, as a type alias. Reflexivity holds. 
-/// 
+/// Equality at a constraint level, as a type alias. Reflexivity holds.
+///
 /// # Example
-/// 
+///
 /// Note that due to the rust type checker, coercions are not as simple as they
 /// might look.
-/// 
+///
 /// ```compile_fail
 /// # use type_equalities::IsEqual;
 /// // Trying to implement coerce like this fails!
@@ -42,16 +42,16 @@ impl<T: ?Sized> AliasSelf for T {
 /// //   |        |  found type parameter    expected `U` because of return type
 /// //   |        expected type parameter
 /// ```
-/// 
+///
 /// But the following works correctly:
-/// 
+///
 /// ```
 /// # use type_equalities::{IsEqual, coerce, trivial_eq};
 /// fn foo<U, T: IsEqual<U>>(t: T) -> U { coerce(t, trivial_eq()) }
 /// assert_eq!(foo::<u32, u32>(42), 42)
 /// ```
-pub trait IsEqual<U: ?Sized> : AliasSelf<Alias=U> {}
-impl<T: ?Sized, U: ?Sized> IsEqual<U> for T where T: AliasSelf<Alias=U> {}
+pub trait IsEqual<U: ?Sized>: AliasSelf<Alias = U> {}
+impl<T: ?Sized, U: ?Sized> IsEqual<U> for T where T: AliasSelf<Alias = U> {}
 
 /// Evidence of the equality `T == U` as a zero-sized type.
 pub struct TypeEq<T: ?Sized, U: ?Sized> {
@@ -76,13 +76,18 @@ pub const fn refl<T: ?Sized>() -> TypeEq<T, T> {
 }
 
 /// Construct evidence of `TypeEq<T, U>` under the constraint `T: IsEqual<U>`.
-/// 
+///
 /// Note quite as trivial as it might appear, since we're fighting the type checker a bit.
 /// Also should be `const fn` but isn't due to [issue #57563].
-/// 
+///
 /// [issue #57563]: https://github.com/rust-lang/rust/issues/57563
-pub fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U> where T: IsEqual<U> {
-    const fn refl_alias<T: ?Sized>() -> TypeEq<T, <T as AliasSelf>::Alias> { refl() }
+pub fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U>
+where
+    T: IsEqual<U>,
+{
+    const fn refl_alias<T: ?Sized>() -> TypeEq<T, <T as AliasSelf>::Alias> {
+        refl()
+    }
     refl_alias()
 }
 
