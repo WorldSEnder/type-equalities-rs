@@ -84,6 +84,8 @@ impl<T: ?Sized, U: ?Sized> Clone for TypeEq<T, U> {
 impl<T: ?Sized, U: ?Sized> Copy for TypeEq<T, U> {}
 
 /// Construct evidence of the reflexive equality `T == T`.
+///
+/// There is also a constructor-like version of this, [`TypeEq::refl`].
 pub const fn refl<T: ?Sized>() -> TypeEq<T, T> {
     TypeEq {
         _inner: refl_kernel(),
@@ -92,10 +94,10 @@ pub const fn refl<T: ?Sized>() -> TypeEq<T, T> {
 
 /// Construct evidence of `TypeEq<T, U>` under the constraint `T: IsEqual<U>`.
 ///
-/// Note quite as trivial as it might appear, since we're fighting the type checker a bit.
-/// Also should be `const fn` but isn't due to [issue #57563].
+/// There is also a receiver version of this, [`TypeEq::trivial`].
 ///
-/// [issue #57563]: https://github.com/rust-lang/rust/issues/57563
+/// Note quite as trivial to implement as it might appear, since we're fighting
+/// the type checker a bit.
 pub const fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U>
 where
     T: IsEqual<U>,
@@ -108,7 +110,9 @@ where
 
 /// Coerce a value of type `T` to a value of type `U`, given evidence that `T == U`.
 ///
-/// Note that this is operationally a no-op
+/// Note that this is operationally a no-op.
+///
+/// There is also a receiver version of this, [`TypeEq::coerce`].
 ///
 /// # Examples
 ///
@@ -163,6 +167,8 @@ pub fn coerce_mut<'a, T: ?Sized, U: ?Sized>(t: &'a mut T, ev: TypeEq<T, U>) -> &
 
 /// Our workhorse for most of the other coerce implementations, lifting the equality through
 /// an arbitrary [`TypeFunction`]. Do consider using this before writing a custom Consumer.
+///
+/// There is also a receiver version of this, [`TypeEq::substitute`].
 #[inline(always)]
 pub fn substitute<T: ?Sized, U: ?Sized, F: TypeFunction<T> + TypeFunction<U>>(
     t: ApF<F, T>,
