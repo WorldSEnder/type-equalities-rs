@@ -8,6 +8,7 @@
 // according to those terms.
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
 #![feature(unsized_fn_params)]
+#![warn(missing_docs)] // warn if there are missing docs
 //! Implements type equalities that can be passed around and used at runtime to safely coerce values,
 //! references and other structures dependending on these types.
 //!
@@ -17,6 +18,7 @@ use std::marker::PhantomData;
 
 /// Trait used to convince the rust type checker of the claimed equality
 pub trait AliasSelf {
+    /// Always set to `Self`, but the type checker doesn't reduce `T::Alias` to `T`.
     type Alias: ?Sized;
 }
 impl<T: ?Sized> AliasSelf for T {
@@ -47,13 +49,20 @@ impl<T: ?Sized> AliasSelf for T {
 ///
 /// ```
 /// # use type_equalities::{IsEqual, coerce, trivial_eq};
-/// fn foo<U, T: IsEqual<U>>(t: T) -> U { coerce(t, trivial_eq()) }
+/// fn foo<U, T: IsEqual<U>>(t: T) -> U { trivial_eq().coerce(t) }
 /// assert_eq!(foo::<u32, u32>(42), 42)
 /// ```
 pub trait IsEqual<U: ?Sized>: AliasSelf<Alias = U> {}
 impl<T: ?Sized, U: ?Sized> IsEqual<U> for T where T: AliasSelf<Alias = U> {}
 
 /// Evidence of the equality `T == U` as a zero-sized type.
+///
+/// ```
+/// # use type_equalities::TypeEq;
+/// # type T = ();
+/// # type U = ();
+/// assert_eq!(std::mem::size_of::<TypeEq<T, U>>(), 0);
+/// ```
 pub struct TypeEq<T: ?Sized, U: ?Sized> {
     _phantomt: PhantomData<T>,
     _phantomu: PhantomData<U>,
@@ -93,6 +102,7 @@ where
 
 /// A consumer recives evidence of a type equality `T == U` and computes a result.
 pub trait Consumer<T: ?Sized, U: ?Sized> {
+    /// The result type returned from [`Consumer::consume_eq`].
     type Result;
     /// The strange `where` clause enables the consumer to observe that:
     /// - `T == <T as AssocSelf>::Alias` by the implementation of `AssocSelf`
@@ -124,7 +134,7 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     }
 }
 
-/// Implements the identity [`TypeFunction`], mapping types to itself. Coercing through this gives
+/// The identity [`TypeFunction`], `ApF<IdF, T> == T`. Coercing through this gives
 /// us the basic safe transmute.
 pub struct IdF;
 impl<A: ?Sized> TypeFunction<A> for IdF {
@@ -146,7 +156,7 @@ pub fn coerce<T, U>(t: T, ev: TypeEq<T, U>) -> U {
     substitute::<_, _, IdF>(t, ev)
 }
 
-/// Implements the [`TypeFunction`] `ApF<BoxF, A> == Box<A>`
+/// The [`TypeFunction`] `ApF<BoxF, A> == Box<A>`
 struct BoxF;
 impl<A: ?Sized> TypeFunction<A> for BoxF {
     type Result = Box<A>;
@@ -165,7 +175,7 @@ pub fn coerce_box<T: ?Sized, U: ?Sized>(t: Box<T>, ev: TypeEq<T, U>) -> Box<U> {
     substitute::<_, _, BoxF>(t, ev)
 }
 
-/// Implements the [`TypeFunction`] `ApF<RefF<'a>, A> == &'a A`
+/// The [`TypeFunction`] `ApF<RefF<'a>, A> == &'a A`
 pub struct RefF<'a>(std::marker::PhantomData<&'a ()>);
 impl<'a, A: ?Sized + 'a> TypeFunction<A> for RefF<'a> {
     type Result = &'a A;
@@ -203,9 +213,11 @@ pub fn coerce_mut<'a, T: ?Sized, U: ?Sized>(t: &'a mut T, ev: TypeEq<T, U>) -> &
     substitute::<_, _, MutRefF>(t, ev)
 }
 
-/// A trait mapping type arguments to results. Note that `Self` is used only as a marker.
-/// See also [`substitute`], which implements coercing of results.
+/// A trait for type level functions, mapping type arguments to type results.
+///
+/// Note that `Self` is used only as a marker. See also [`substitute`], which implements coercing of results.
 pub trait TypeFunction<Arg: ?Sized> {
+    /// The type that `Arg` is mapped to by the implementor.
     type Result: ?Sized;
 }
 
@@ -241,11 +253,16 @@ where
     ev.use_eq(con)
 }
 
-/// Implements a [`TypeFunction`] version of the Martin-Löf identity type, i.e.
+/// A [`TypeFunction`] version of the Martin-Löf identity type:
 /// `ApF<LoefIdF<T>, U> == TypeEq<T, U>`.
 pub struct LoefIdF<T: ?Sized>(std::marker::PhantomData<T>);
 impl<T: ?Sized, Arg: ?Sized> TypeFunction<Arg> for LoefIdF<T> {
     type Result = TypeEq<T, Arg>;
+}
+/// [`LoefIdF`] flipped, i.e. `ApF<LoefIdFlippedF<T>, U> == TypeEq<U, T>`
+pub struct LoefIdFlippedF<T: ?Sized>(std::marker::PhantomData<T>);
+impl<T: ?Sized, Arg: ?Sized> TypeFunction<Arg> for LoefIdFlippedF<T> {
+    type Result = TypeEq<Arg, T>;
 }
 
 /// Composition for [`TypeFunction`]s, i.e. `ApF<ComposeF<F, G>, T> == ApF<F, ApF<G, T>>`
@@ -258,12 +275,57 @@ where
     type Result = F::Result;
 }
 
-/// Lift the type equality through any [`TypeFunction`]
-pub fn lift_equality<T: ?Sized, U: ?Sized, F: TypeFunction<T> + TypeFunction<U>>(
-    ev: TypeEq<T, U>,
-) -> TypeEq<ApF<F, T>, ApF<F, U>> {
-    type R<T, F> = ComposeF<LoefIdF<<F as TypeFunction<T>>::Result>, F>;
-    substitute::<_, _, R<T, F>>(refl(), ev)
+impl<T: ?Sized> TypeEq<T, T> {
+    /// Same as [`crate::refl`]
+    pub fn refl() -> TypeEq<T, T> {
+        self::refl()
+    }
+}
+
+impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
+    /// Same as [`crate::trivial_eq`].
+    pub fn trivial() -> Self
+    where
+        T: IsEqual<U>,
+    {
+        self::trivial_eq()
+    }
+    /// Same as [`crate::substitute`].
+    #[inline]
+    pub fn substitute<F: TypeFunction<T> + TypeFunction<U>>(self, t: ApF<F, T>) -> ApF<F, U>
+    where
+        ApF<F, T>: Sized,
+        ApF<F, U>: Sized,
+    {
+        self::substitute::<_, _, F>(t, self)
+    }
+    /// Same as [`crate::coerce`]. Note that this is operationally a no-op.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use type_equalities::refl;
+    /// assert_eq!(refl().coerce(42), 42);
+    /// ```
+    #[inline]
+    pub fn coerce(self, t: T) -> U
+    where
+        T: Sized,
+        U: Sized,
+    {
+        self::coerce(t, self)
+    }
+    /// Lift the type equality through any [`TypeFunction`]
+    pub fn lift_through<F: TypeFunction<T> + TypeFunction<U>>(
+        self,
+    ) -> TypeEq<ApF<F, T>, ApF<F, U>> {
+        type R<T, F> = ComposeF<LoefIdF<ApF<F, T>>, F>;
+        self.substitute::<R<T, F>>(refl())
+    }
+    /// Get the inverse equality. `T == U  ==>  U == T`
+    pub fn invert(self) -> TypeEq<U, T> {
+        self.substitute::<LoefIdFlippedF<T>>(refl())
+    }
 }
 
 #[cfg(feature = "test-for-type-equality")]
@@ -294,7 +356,7 @@ mod test {
     fn test_type_eq<T, U>(t: T) -> Option<U> {
         match maybe_type_eq::<T, U>() {
             None => None,
-            Some(eq) => Some(coerce(t, eq)),
+            Some(eq) => Some(eq.coerce(t)),
         }
     }
     #[test]
