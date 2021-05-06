@@ -1,4 +1,6 @@
 # type-equalities
+[![Documentation](https://docs.rs/type-equalities/badge.svg)](https://docs.rs/type-equalities/)
+[![Further crate info](https://img.shields.io/crates/v/type-equalities.svg)](https://crates.io/crates/type-equalities)
 
 ## License
 
