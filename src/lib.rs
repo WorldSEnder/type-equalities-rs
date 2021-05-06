@@ -8,8 +8,8 @@
 // according to those terms.
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
 #![feature(unsized_fn_params)]
-#![warn(missing_docs)] // warn if there are missing docs
-//! Implements type equalities that can be passed around and used at runtime to safely coerce values,
+#![warn(missing_docs, missing_crate_level_docs)]
+//! Implements [`TypeEq`] that can be passed around and used at runtime to safely coerce values,
 //! references and other structures dependending on these types.
 //!
 //! The equality type is zero-sized, and the coercion should optimize to a no-op in all cases.
@@ -121,17 +121,6 @@ pub trait Consumer<T: ?Sized, U: ?Sized> {
     fn consume_eq(self) -> Self::Result
     where
         T: IsEqual<U>;
-}
-
-impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
-    /// Use the observed equality to call the consumer to compute a result.
-    #[inline(always)]
-    pub fn use_eq<C: Consumer<T, U>>(self, c: C) -> C::Result {
-        let ref_c: Box<dyn Consumer<T, U, Result = C::Result>> = Box::new(c);
-        let tref_c: Box<dyn Consumer<T, T, Result = C::Result>> =
-            unsafe { std::mem::transmute(ref_c) };
-        <dyn Consumer<T, T, Result = C::Result> as Consumer<T, T>>::consume_eq(*tref_c)
-    }
 }
 
 /// The identity [`TypeFunction`], `ApF<IdF, T> == T`. Coercing through this gives
@@ -276,7 +265,7 @@ where
 }
 
 impl<T: ?Sized> TypeEq<T, T> {
-    /// Same as [`crate::refl`]
+    /// Same as [`crate::refl`].
     pub fn refl() -> TypeEq<T, T> {
         self::refl()
     }
@@ -326,8 +315,37 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     pub fn invert(self) -> TypeEq<U, T> {
         self.substitute::<LoefIdFlippedF<T>>(refl())
     }
+    /// Apply transitivity. `T == U  ==>  U == V  ==>  T == V`
+    pub fn trans<V: ?Sized>(self, rhs: TypeEq<U, V>) -> TypeEq<T, V> {
+        rhs.substitute::<LoefIdF<T>>(self)
+    }
 }
 
+impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
+    /// Use the observed equality to call the consumer to compute a result.
+    ///
+    /// Consider using once of [`TypeEq::coerce`] or [`TypeEq::lift_through`] first.
+    #[inline(always)]
+    pub fn use_eq<C: Consumer<T, U>>(self, c: C) -> C::Result {
+        let ref_c: Box<dyn Consumer<T, U, Result = C::Result>> = Box::new(c);
+        let tref_c: Box<dyn Consumer<T, T, Result = C::Result>> =
+            unsafe { std::mem::transmute(ref_c) };
+        <dyn Consumer<T, T, Result = C::Result> as Consumer<T, T>>::consume_eq(*tref_c)
+    }
+}
+
+/// Optionally obtain a type equality if the type checker can solve `T == U`.
+///
+/// Note that this depends on `#![feature(specialization)]` and works by overloading
+/// some defined instances. Do not depend on always getting back a `Some(..)`, but
+/// it will work fine in the simple cases.
+///
+/// # Examples
+///
+/// ```
+/// # use type_equalities::maybe_type_eq;
+/// assert_eq!(maybe_type_eq::<u32, u32>().unwrap().coerce(42), 42);
+/// ```
 #[cfg(feature = "test-for-type-equality")]
 pub const fn maybe_type_eq<T: ?Sized, U: ?Sized>() -> Option<TypeEq<T, U>> {
     // Helper trait. `VALUE` is false, except for the specialization of the
@@ -349,27 +367,22 @@ pub const fn maybe_type_eq<T: ?Sized, U: ?Sized>() -> Option<TypeEq<T, U>> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "test-for-type-equality")]
 mod test {
     use super::*;
 
-    #[cfg(feature = "test-for-type-equality")]
     fn test_type_eq<T, U>(t: T) -> Option<U> {
-        match maybe_type_eq::<T, U>() {
+        match maybe_type_eq() {
             None => None,
             Some(eq) => Some(eq.coerce(t)),
         }
     }
+
     #[test]
-    #[cfg(feature = "test-for-type-equality")]
     fn test_some_integers() {
         assert_eq!(test_type_eq::<i32, i32>(0), Some(0));
         assert_eq!(test_type_eq::<&i32, &i32>(&0).copied(), Some(0));
         assert_eq!(test_type_eq::<&i32, i32>(&0), None);
         assert_eq!(test_type_eq::<i32, u32>(0), None);
-    }
-
-    #[test]
-    fn test_coerce() {
-        assert_eq!(coerce(42, refl()), 42);
     }
 }
