@@ -8,12 +8,21 @@
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
 #![feature(unsized_fn_params)]
 #![warn(missing_docs, missing_crate_level_docs)]
+#![no_std]
 //! Implements [`TypeEq`] that can be passed around and used at runtime to safely coerce values,
 //! references and other structures dependending on these types.
 //!
 //! The equality type is zero-sized, and the coercion should optimize to a no-op in all cases.
 
-use std::marker::PhantomData;
+extern crate core;
+use core::marker::PhantomData;
+
+#[cfg(feature = "std")]
+extern crate alloc;
+#[cfg(feature = "std")]
+use alloc::boxed::Box;
+
+use crate::kernel::{refl as refl_kernel, use_eq as use_kernel_eq, TheEq};
 
 /// Trait used to convince the rust type checker of the claimed equality
 pub trait AliasSelf {
@@ -60,11 +69,10 @@ impl<T: ?Sized, U: ?Sized> IsEqual<U> for T where T: AliasSelf<Alias = U> {}
 /// # use type_equalities::TypeEq;
 /// # type T = ();
 /// # type U = ();
-/// assert_eq!(std::mem::size_of::<TypeEq<T, U>>(), 0);
+/// assert_eq!(core::mem::size_of::<TypeEq<T, U>>(), 0);
 /// ```
 pub struct TypeEq<T: ?Sized, U: ?Sized> {
-    _phantomt: PhantomData<*const T>,
-    _phantomu: PhantomData<*const U>,
+    _inner: TheEq<T, U>,
 }
 
 impl<T: ?Sized, U: ?Sized> Clone for TypeEq<T, U> {
@@ -76,10 +84,8 @@ impl<T: ?Sized, U: ?Sized> Copy for TypeEq<T, U> {}
 
 /// Construct evidence of the reflexive equality `T == T`.
 pub const fn refl<T: ?Sized>() -> TypeEq<T, T> {
-    // This is the only place where a TypeEq is constructed
     TypeEq {
-        _phantomt: PhantomData,
-        _phantomu: PhantomData,
+        _inner: refl_kernel(),
     }
 }
 
@@ -100,6 +106,7 @@ where
 }
 
 /// A consumer recives evidence of a type equality `T == U` and computes a result.
+// TODO: This trait could be unsafe to implement, since it gets transmuted, but time will tell.
 pub trait Consumer<T: ?Sized, U: ?Sized> {
     /// The result type returned from [`Consumer::consume_eq`].
     type Result;
@@ -145,7 +152,9 @@ pub fn coerce<T, U>(t: T, ev: TypeEq<T, U>) -> U {
 }
 
 /// The [`TypeFunction`] `ApF<BoxF, A> == Box<A>`
+#[cfg(feature = "std")]
 struct BoxF;
+#[cfg(feature = "std")]
 impl<A: ?Sized> TypeFunction<A> for BoxF {
     type Result = Box<A>;
 }
@@ -158,13 +167,14 @@ impl<A: ?Sized> TypeFunction<A> for BoxF {
 /// # use type_equalities::{coerce_box, refl};
 /// assert_eq!(*coerce_box(Box::new(42), refl()), 42);
 /// ```
+#[cfg(feature = "std")]
 #[inline]
 pub fn coerce_box<T: ?Sized, U: ?Sized>(t: Box<T>, ev: TypeEq<T, U>) -> Box<U> {
     substitute::<_, _, BoxF>(t, ev)
 }
 
 /// The [`TypeFunction`] `ApF<RefF<'a>, A> == &'a A`
-pub struct RefF<'a>(std::marker::PhantomData<&'a ()>);
+pub struct RefF<'a>(PhantomData<&'a ()>);
 impl<'a, A: ?Sized + 'a> TypeFunction<A> for RefF<'a> {
     type Result = &'a A;
 }
@@ -183,7 +193,7 @@ pub fn coerce_ref<'a, T: ?Sized, U: ?Sized>(t: &'a T, ev: TypeEq<T, U>) -> &'a U
 }
 
 /// Implements the [`TypeFunction`] `ApF<MutRefF<'a>, A> == &'a mut A`
-pub struct MutRefF<'a>(std::marker::PhantomData<&'a ()>);
+pub struct MutRefF<'a>(PhantomData<&'a ()>);
 impl<'a, A: ?Sized + 'a> TypeFunction<A> for MutRefF<'a> {
     type Result = &'a mut A;
 }
@@ -243,18 +253,18 @@ where
 
 /// A [`TypeFunction`] version of the Martin-Löf identity type:
 /// `ApF<LoefIdF<T>, U> == TypeEq<T, U>`.
-pub struct LoefIdF<T: ?Sized>(std::marker::PhantomData<T>);
+pub struct LoefIdF<T: ?Sized>(PhantomData<T>);
 impl<T: ?Sized, Arg: ?Sized> TypeFunction<Arg> for LoefIdF<T> {
     type Result = TypeEq<T, Arg>;
 }
 /// [`LoefIdF`] flipped, i.e. `ApF<LoefIdFlippedF<T>, U> == TypeEq<U, T>`
-pub struct LoefIdFlippedF<T: ?Sized>(std::marker::PhantomData<T>);
+pub struct LoefIdFlippedF<T: ?Sized>(PhantomData<T>);
 impl<T: ?Sized, Arg: ?Sized> TypeFunction<Arg> for LoefIdFlippedF<T> {
     type Result = TypeEq<Arg, T>;
 }
 
 /// Composition for [`TypeFunction`]s, i.e. `ApF<ComposeF<F, G>, T> == ApF<F, ApF<G, T>>`
-pub struct ComposeF<F: ?Sized, G: ?Sized>(std::marker::PhantomData<F>, std::marker::PhantomData<G>);
+pub struct ComposeF<F: ?Sized, G: ?Sized>(PhantomData<F>, PhantomData<G>);
 impl<F: ?Sized, G: ?Sized, Arg: ?Sized> TypeFunction<Arg> for ComposeF<F, G>
 where
     G: TypeFunction<Arg>,
@@ -326,9 +336,50 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     /// Consider using once of [`TypeEq::coerce`] or [`TypeEq::lift_through`] first.
     #[inline(always)]
     pub fn use_eq<C: Consumer<T, U>>(self, c: C) -> C::Result {
+        use_kernel_eq(self._inner, c)
+    }
+}
+
+mod kernel {
+    use super::Consumer;
+    #[cfg(feature = "std")]
+    use alloc::boxed::Box;
+    use core::marker::PhantomData;
+    #[cfg(not(feature = "std"))]
+    core::compile_error!(
+        "Currently core-only is not supported, but reserved for the future. The reason is technical, internally
+        Box is used to do a transmute of trait objects. If you know how to work around this, please open an issue.
+        For the meanwhile, 'alloc' has to be available.");
+
+    pub(crate) struct TheEq<T: ?Sized, U: ?Sized> {
+        _phantomt: PhantomData<*const T>,
+        _phantomu: PhantomData<*const U>,
+    }
+
+    impl<T: ?Sized, U: ?Sized> Clone for TheEq<T, U> {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+    impl<T: ?Sized, U: ?Sized> Copy for TheEq<T, U> {}
+
+    pub(crate) const fn refl<T: ?Sized>() -> TheEq<T, T> {
+        // This is the only place where a TypeEq is constructed
+        TheEq {
+            _phantomt: PhantomData,
+            _phantomu: PhantomData,
+        }
+    }
+
+    pub(crate) fn use_eq<T: ?Sized, U: ?Sized, C: Consumer<T, U>>(
+        _: TheEq<T, U>,
+        c: C,
+    ) -> C::Result {
+        // By our invariant of only constructing `TheEq<T, T>`, we know here that `U = T`.
+        // Use this to transmute the consumer
         let ref_c: Box<dyn Consumer<T, U, Result = C::Result>> = Box::new(c);
         let tref_c: Box<dyn Consumer<T, T, Result = C::Result>> =
-            unsafe { std::mem::transmute(ref_c) };
+            unsafe { core::mem::transmute(ref_c) };
         <dyn Consumer<T, T, Result = C::Result> as Consumer<T, T>>::consume_eq(*tref_c)
     }
 }
