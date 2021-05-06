@@ -1,12 +1,17 @@
 [package]
 name = "type-equalities"
+license = "MIT/Apache-2.0"
 version = "0.1.0"
 authors = ["Martin Molzer <ga65guy@mytum.de>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+readme = "README.md"
+homepage = "https://github.com/WorldSEnder/type-equalities-rs"
+repository = "https://github.com/WorldSEnder/type-equalities-rs"
 
 [dependencies]
 
 [features]
+default = ["std"]
 test-for-type-equality = []
+# Reservation for a feature turning off std
+std = []
