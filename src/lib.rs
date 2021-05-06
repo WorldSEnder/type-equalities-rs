@@ -259,7 +259,7 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
 
 /// Details for primitively consuming an equality.
 pub mod details {
-    use super::*;
+    use crate::IsEqual;
 
     /// A consumer recives evidence of a type equality `T == U` and computes a result.
     // TODO: This trait could be unsafe to implement, since it gets transmuted, but time will tell.
@@ -381,7 +381,7 @@ pub mod type_functions {
 }
 
 mod kernel {
-    use super::Consumer;
+    use crate::details::Consumer;
     use alloc::boxed::Box;
     use core::marker::PhantomData;
 
@@ -452,7 +452,7 @@ pub const fn maybe_type_eq<T: ?Sized, U: ?Sized>() -> Option<TypeEq<T, U>> {
 
 #[cfg(all(test, feature = "test-for-type-equality"))]
 mod test {
-    use super::*;
+    use crate::*;
 
     fn test_type_eq<T, U>(t: T) -> Option<U> {
         match maybe_type_eq() {
