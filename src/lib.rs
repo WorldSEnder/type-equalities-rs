@@ -9,6 +9,7 @@
 #![cfg_attr(test, allow(soft_unstable))]
 #![cfg_attr(test, feature(test))]
 #![feature(unsized_fn_params)]
+#![feature(const_fn_trait_bound)]
 #![warn(missing_docs, missing_crate_level_docs)]
 #![no_std]
 //! Implements [`TypeEq`] that can be passed around and used at runtime to safely coerce values,
@@ -99,7 +100,7 @@ pub const fn refl<T: ?Sized>() -> TypeEq<T, T> {
 /// Also should be `const fn` but isn't due to [issue #57563].
 ///
 /// [issue #57563]: https://github.com/rust-lang/rust/issues/57563
-pub fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U>
+pub const fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U>
 where
     T: IsEqual<U>,
 {
@@ -285,14 +286,14 @@ where
 
 impl<T: ?Sized> TypeEq<T, T> {
     /// Same as [`crate::refl`].
-    pub fn refl() -> TypeEq<T, T> {
+    pub const fn refl() -> TypeEq<T, T> {
         self::refl()
     }
 }
 
 impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     /// Same as [`crate::trivial_eq`].
-    pub fn trivial() -> Self
+    pub const fn trivial() -> Self
     where
         T: IsEqual<U>,
     {
