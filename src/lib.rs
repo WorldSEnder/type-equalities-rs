@@ -63,8 +63,8 @@ impl<T: ?Sized, U: ?Sized> IsEqual<U> for T where T: AliasSelf<Alias = U> {}
 /// assert_eq!(std::mem::size_of::<TypeEq<T, U>>(), 0);
 /// ```
 pub struct TypeEq<T: ?Sized, U: ?Sized> {
-    _phantomt: PhantomData<T>,
-    _phantomu: PhantomData<U>,
+    _phantomt: PhantomData<*const T>,
+    _phantomu: PhantomData<*const U>,
 }
 
 impl<T: ?Sized, U: ?Sized> Clone for TypeEq<T, U> {
