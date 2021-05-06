@@ -6,6 +6,8 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
+#![cfg_attr(test, allow(soft_unstable))]
+#![cfg_attr(test, feature(test))]
 #![feature(unsized_fn_params)]
 #![warn(missing_docs, missing_crate_level_docs)]
 #![no_std]
@@ -21,6 +23,8 @@ use core::marker::PhantomData;
 extern crate alloc;
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
+#[cfg(test)]
+extern crate test;
 
 use crate::kernel::{refl as refl_kernel, use_eq as use_kernel_eq, TheEq};
 
@@ -209,6 +213,12 @@ impl<'a, A: ?Sized + 'a> TypeFunction<A> for MutRefF<'a> {
 #[inline]
 pub fn coerce_mut<'a, T: ?Sized, U: ?Sized>(t: &'a mut T, ev: TypeEq<T, U>) -> &'a mut U {
     substitute::<_, _, MutRefF>(t, ev)
+}
+
+/// Implements the [`TypeFunction`] `ApF<SliceF<N>, A> == [A; N]`
+pub struct SliceF<const N: usize>(PhantomData<*const [(); N]>);
+impl<A, const N: usize> TypeFunction<A> for SliceF<N> {
+    type Result = [A; N];
 }
 
 /// A trait for type level functions, mapping type arguments to type results.
@@ -416,8 +426,7 @@ pub const fn maybe_type_eq<T: ?Sized, U: ?Sized>() -> Option<TypeEq<T, U>> {
     <T as ObsTypeEq<U>>::VALUE
 }
 
-#[cfg(test)]
-#[cfg(feature = "test-for-type-equality")]
+#[cfg(all(test, feature = "test-for-type-equality"))]
 mod test {
     use super::*;
 
@@ -434,5 +443,26 @@ mod test {
         assert_eq!(test_type_eq::<&i32, &i32>(&0).copied(), Some(0));
         assert_eq!(test_type_eq::<&i32, i32>(&0), None);
         assert_eq!(test_type_eq::<i32, u32>(0), None);
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod benches {
+    use super::*;
+    use test::Bencher;
+
+    // Must still fit on the stack.
+    const BENCH_LEN: usize = 100_000;
+    const THE_ARRAY: [u32; BENCH_LEN] = [0; BENCH_LEN];
+
+    #[bench]
+    fn bench_no_coerce(b: &mut Bencher) {
+        b.iter(|| THE_ARRAY);
+    }
+
+    #[bench]
+    fn bench_coerce_array_refl(b: &mut Bencher) {
+        let eq = refl::<u32>().lift_through::<SliceF<BENCH_LEN>>();
+        b.iter(|| eq.coerce(THE_ARRAY));
     }
 }
