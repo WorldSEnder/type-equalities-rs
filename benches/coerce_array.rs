@@ -3,6 +3,7 @@ extern crate test;
 
 mod benches {
     use test::Bencher;
+    use type_equalities::type_functions::*;
     use type_equalities::*;
 
     // Must still fit on the stack.
