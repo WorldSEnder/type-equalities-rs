@@ -241,7 +241,7 @@ impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     pub fn invert(self) -> TypeEq<U, T> {
         self.substitute::<LoefIdFlippedF<T>>(refl())
     }
-    /// Apply transitivity. `T == U  ==>  U == V  ==>  T == V`
+    /// Apply transitivity. `T == U & U == V  ==>  T == V`
     pub fn trans<V: ?Sized>(self, rhs: TypeEq<U, V>) -> TypeEq<T, V> {
         rhs.substitute::<LoefIdF<T>>(self)
     }
