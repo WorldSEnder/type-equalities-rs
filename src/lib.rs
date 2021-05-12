@@ -72,6 +72,39 @@ impl<T: ?Sized, U: ?Sized> IsEqual<U> for T where T: AliasSelf<Alias = U> {}
 /// # type U = ();
 /// assert_eq!(core::mem::size_of::<TypeEq<T, U>>(), 0);
 /// ```
+///
+/// It is important to note that the `TypeEq` is [invariant]
+/// in both arguments.
+///
+/// ```compile_fail
+/// # use type_equalities::TypeEq;
+/// fn coerce_lt<'a, 'b: 'a, T>(eq: TypeEq<&'b T, &'b T>)
+///     -> TypeEq<&'b T, &'a T>
+/// {
+///     eq
+/// }
+/// ```
+///
+/// ```compile_fail
+/// # use type_equalities::TypeEq;
+/// fn coerce_lt_inv<'a, 'b: 'a, T>(eq: TypeEq<&'a T, &'a T>)
+///     -> TypeEq<&'a T, &'b T>
+/// {
+///     eq
+/// }
+/// ```
+///
+/// Unsizing also does not work for TypeEq.
+///
+/// ```compile_fail
+/// fn coerce_dyn<T: core::fmt::Debug>(eq: &TypeEq<T, T>)
+///     -> &TypeEq<T, dyn core::fmt::Debug>
+/// {
+///     eq
+/// }
+/// ```
+///
+/// [invariant]: https://doc.rust-lang.org/nomicon/subtyping.html#variance
 pub struct TypeEq<T: ?Sized, U: ?Sized> {
     _inner: TheEq<T, U>,
 }
@@ -392,8 +425,8 @@ mod kernel {
     use core::marker::PhantomData;
 
     pub(crate) struct TheEq<T: ?Sized, U: ?Sized> {
-        _phantomt: PhantomData<*const T>,
-        _phantomu: PhantomData<*const U>,
+        _phantomt: PhantomData<*const core::cell::Cell<T>>,
+        _phantomu: PhantomData<*const core::cell::Cell<U>>,
     }
 
     impl<T: ?Sized, U: ?Sized> Clone for TheEq<T, U> {
