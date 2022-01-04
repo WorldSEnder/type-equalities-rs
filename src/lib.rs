@@ -181,7 +181,7 @@ pub fn coerce_box<T: ?Sized, U: ?Sized>(t: Box<T>, ev: TypeEq<T, U>) -> Box<U> {
 /// assert_eq!(*coerce_ref(&42, refl()), 42);
 /// ```
 #[inline]
-pub fn coerce_ref<'a, T: ?Sized, U: ?Sized>(t: &'a T, ev: TypeEq<T, U>) -> &'a U {
+pub fn coerce_ref<T: ?Sized, U: ?Sized>(t: &T, ev: TypeEq<T, U>) -> &U {
     substitute::<_, _, RefF>(t, ev)
 }
 
@@ -194,7 +194,7 @@ pub fn coerce_ref<'a, T: ?Sized, U: ?Sized>(t: &'a T, ev: TypeEq<T, U>) -> &'a U
 /// assert_eq!(*coerce_ref(&mut 42, refl()), 42);
 /// ```
 #[inline]
-pub fn coerce_mut<'a, T: ?Sized, U: ?Sized>(t: &'a mut T, ev: TypeEq<T, U>) -> &'a mut U {
+pub fn coerce_mut<T: ?Sized, U: ?Sized>(t: &mut T, ev: TypeEq<T, U>) -> &mut U {
     substitute::<_, _, MutRefF>(t, ev)
 }
 
