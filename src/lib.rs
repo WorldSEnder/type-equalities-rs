@@ -493,9 +493,14 @@ mod kernel {
 ///
 /// ```
 /// # use type_equalities::maybe_type_eq;
+/// # fn run() -> Option<()> {
 /// assert_eq!(maybe_type_eq::<u32, u32>()?.coerce(42), 42);
+/// # Some(()) }
+/// # run().ok_or("failed to prove equality")?;
+/// # Ok::<(), &'static str>(())
 /// ```
 #[cfg(feature = "test-for-type-equality")]
+#[rustversion::attr(nightly, doc(cfg(feature = "test-for-type-equality")))]
 pub const fn maybe_type_eq<T: ?Sized, U: ?Sized>() -> Option<TypeEq<T, U>> {
     // Helper trait. `VALUE` is false, except for the specialization of the
     // case where `T == U`.

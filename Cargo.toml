@@ -2,7 +2,7 @@
 name = "type-equalities"
 description = "Observing type equality with zero-sized proofs"
 license = "MIT/Apache-2.0"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Martin Molzer <ga65guy@mytum.de>"]
 edition = "2018"
 readme = "README.md"
@@ -19,3 +19,6 @@ rustversion = "1.0"
 default = ["alloc"]
 test-for-type-equality = []
 alloc = []
+
+[package.metadata.docs.rs]
+all-features = true
