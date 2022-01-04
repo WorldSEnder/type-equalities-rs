@@ -8,26 +8,21 @@
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
 #![feature(unsized_fn_params)]
 #![feature(const_fn_trait_bound)]
-#![warn(missing_docs, missing_crate_level_docs)]
+#![warn(missing_docs, rustdoc::missing_crate_level_docs)]
 #![no_std]
 //! Implements [`TypeEq`] that can be passed around and used at runtime to safely coerce values,
 //! references and other structures dependending on these types.
 //!
 //! The equality type is zero-sized, and the coercion should optimize to a no-op in all cases.
 //!
-//! This crate is `![no_std]` but still requires access to [`alloc`]. This requirement might get
-//! lifted in the future.
+//! This crate is `![no_std]`.
 
 extern crate core;
 use core::marker::PhantomData;
 
-#[cfg(not(feature = "std"))]
-core::compile_error!(
-    "Currently core-only is not supported, but reserved for the future. The reason is technical, internally
-    Box is used to do a transmute of trait objects. If you know how to work around this, please open an issue.
-    For the meanwhile, 'alloc' has to be available.");
+#[cfg(feature = "alloc")]
 extern crate alloc;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
 use details::*;
@@ -166,7 +161,7 @@ pub fn coerce<T, U>(t: T, ev: TypeEq<T, U>) -> U {
 /// # use type_equalities::{coerce_box, refl};
 /// assert_eq!(*coerce_box(Box::new(42), refl()), 42);
 /// ```
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 #[inline]
 pub fn coerce_box<T: ?Sized, U: ?Sized>(t: Box<T>, ev: TypeEq<T, U>) -> Box<U> {
     substitute::<_, _, BoxF>(t, ev)
@@ -213,16 +208,18 @@ where
 {
     struct FunCoercer<T: ?Sized, F: TypeFunction<<T as AliasSelf>::Alias>>(F::Result);
 
-    impl<T: ?Sized, U: ?Sized, F: TypeFunction<T> + TypeFunction<U>> Consumer<T, U> for FunCoercer<T, F>
+    unsafe impl<T: ?Sized, U: ?Sized, F: TypeFunction<T> + TypeFunction<U>> Consumer<T, U>
+        for FunCoercer<T, F>
     where
         ApF<F, U>: Sized,
     {
         type Result = ApF<F, U>;
-        fn consume_eq(self) -> Self::Result
+        fn consume_eq(&self) -> Self::Result
         where
             T: IsEqual<U>,
         {
-            self.0
+            let self_ = unsafe { core::ptr::read(self as *const Self) };
+            self_.0
         }
     }
     let con: FunCoercer<T, F> = FunCoercer(t);
@@ -301,8 +298,11 @@ pub mod details {
     use crate::IsEqual;
 
     /// A consumer recives evidence of a type equality `T == U` and computes a result.
-    // TODO: This trait could be unsafe to implement, since it gets transmuted, but time will tell.
-    pub trait Consumer<T: ?Sized, U: ?Sized> {
+    ///
+    /// # Safety
+    ///
+    /// See the docs of [`consume_eq`] for further safety.
+    pub unsafe trait Consumer<T: ?Sized, U: ?Sized> {
         /// The result type returned from [`Consumer::consume_eq`].
         type Result;
         /// The strange `where` clause enables the consumer to observe that:
@@ -313,19 +313,27 @@ pub mod details {
         ///
         /// [`AliasSelf`] is a workaround, to make it easier for implementors to construct their
         /// own `Consumer`s.
-        /// If your consumer takes a generic parameter `T`, store values with type
-        /// `<T as AliasSelf>::Alias` instead of `T` directly. In `consume_eq`, the compiler
-        /// will correctly reduce this to `U`, since it sees the `where` clause. Additionally,
-        /// during construction (somewhere else), the compiler sees the `impl<T> AssocSelf for T`,
-        /// correctly using the first equality. Thus, you shouldn't have to coerce consumers.
+        ///
+        /// # Safety
+        ///
+        /// `self` is passed as a const ref. Using [`ptr::read`] is guaranteed to be safe.
+        /// If you do not read from it, your consumer will forgotten without running its
+        /// destructor, as with [`mem::forget`].
         ///
         /// [issue #20041]: https://github.com/rust-lang/rust/issues/20041
-        fn consume_eq(self) -> Self::Result
+        fn consume_eq(&self) -> Self::Result
         where
             T: IsEqual<U>;
     }
 
-    /// Trait used to convince the rust type checker of the claimed equality
+    /// Trait used to convince the rust type checker of the claimed equality.
+    ///
+    /// If your consumer takes a generic parameter `T`, store values with type
+    /// `<T as AliasSelf>::Alias` instead of `T` directly. In `consume_eq`, the compiler
+    /// will correctly reduce this to `U`, since it sees the `where` clause. Additionally,
+    /// during construction (somewhere else), the compiler sees the `impl<T> AssocSelf for T`,
+    /// correctly using the first equality. Thus, you shouldn't have to coerce consumers.
+    ///
     pub trait AliasSelf {
         /// Always set to `Self`, but the type checker doesn't reduce `T::Alias` to `T`.
         type Alias: ?Sized;
@@ -352,7 +360,7 @@ pub mod details {
 ///
 pub mod type_functions {
     use super::*;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     use alloc::boxed::Box;
 
     /// A trait for type level functions, mapping type arguments to type results.
@@ -372,9 +380,9 @@ pub mod type_functions {
         type Result = A;
     }
     /// The [`TypeFunction`] `ApF<BoxF, A> == Box<A>`
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     pub struct BoxF;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     impl<A: ?Sized> TypeFunction<A> for BoxF {
         type Result = Box<A>;
     }
@@ -421,8 +429,7 @@ pub mod type_functions {
 
 mod kernel {
     use crate::details::Consumer;
-    use alloc::boxed::Box;
-    use core::marker::PhantomData;
+    use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref};
 
     pub(crate) struct TheEq<T: ?Sized, U: ?Sized> {
         _phantomt: PhantomData<*const core::cell::Cell<T>>,
@@ -450,10 +457,11 @@ mod kernel {
     ) -> C::Result {
         // By our invariant of only constructing `TheEq<T, T>`, we know here that `U = T`.
         // Use this to transmute the consumer
-        let ref_c: Box<dyn Consumer<T, U, Result = C::Result>> = Box::new(c);
-        let tref_c: Box<dyn Consumer<T, T, Result = C::Result>> =
+        let the_c = ManuallyDrop::new(c);
+        let ref_c: &dyn Consumer<T, U, Result = C::Result> = the_c.deref();
+        let tref_c: &dyn Consumer<T, T, Result = C::Result> =
             unsafe { core::mem::transmute(ref_c) };
-        <dyn Consumer<T, T, Result = C::Result> as Consumer<T, T>>::consume_eq(*tref_c)
+        <dyn Consumer<T, T, Result = C::Result> as Consumer<T, T>>::consume_eq(tref_c)
     }
 }
 

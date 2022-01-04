@@ -12,7 +12,6 @@ repository = "https://github.com/WorldSEnder/type-equalities-rs"
 [dependencies]
 
 [features]
-default = ["std"]
+default = ["alloc"]
 test-for-type-equality = []
-# Reservation for a feature turning off std
-std = []
+alloc = []

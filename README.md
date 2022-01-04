@@ -10,13 +10,15 @@ The zero overhead claim can be seen in the provided benchmarks:
 
 ```rust
 let eq = refl::<u32>().lift_through::<SliceF<BENCH_LEN>>();
-// b.iter(|| [0; BENCH_LEN]);         // bench_no_coerce
+b.iter(|| [0; BENCH_LEN]);            // bench_no_coerce
 b.iter(|| eq.coerce([0; BENCH_LEN])); // bench_coerce_array_refl
 
 > running 2 tests
-test benches::bench_no_coerce         ... bench:      10,665 ns/iter (+/- 695)
-test benches::bench_coerce_array_refl ... bench:      10,776 ns/iter (+/- 1,004)
+test benches::bench_no_coerce         ... bench:      10,570 ns/iter (+/- 569)
+test benches::bench_coerce_array_refl ... bench:      10,557 ns/iter (+/- 605)
 ```
+
+This crate is **no-std** and has a (default: enabled) feature for **alloc** features, i.e. coercing `Box`.
 
 ## License
 
