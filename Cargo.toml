@@ -10,6 +10,10 @@ homepage = "https://github.com/WorldSEnder/type-equalities-rs"
 repository = "https://github.com/WorldSEnder/type-equalities-rs"
 
 [dependencies]
+rustversion = "1.0"
+
+[build-dependencies]
+rustversion = "1.0"
 
 [features]
 default = ["alloc"]

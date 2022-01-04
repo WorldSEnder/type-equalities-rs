@@ -1,7 +1,8 @@
-#![feature(test)]
-extern crate test;
+#![cfg_attr(unstable_feature, feature(test))]
 
+#[cfg(unstable_feature)]
 mod benches {
+    extern crate test;
     use test::Bencher;
     use type_equalities::type_functions::*;
     use type_equalities::*;

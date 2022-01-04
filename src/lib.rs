@@ -6,8 +6,8 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 #![cfg_attr(feature = "test-for-type-equality", feature(specialization))]
-#![feature(unsized_fn_params)]
-#![feature(const_fn_trait_bound)]
+#![cfg_attr(unstable_feature, feature(const_fn_trait_bound))]
+#![cfg_attr(unstable_feature, feature(doc_cfg))]
 #![warn(missing_docs, rustdoc::missing_crate_level_docs)]
 #![no_std]
 //! Implements [`TypeEq`] that can be passed around and used at runtime to safely coerce values,
@@ -15,7 +15,7 @@
 //!
 //! The equality type is zero-sized, and the coercion should optimize to a no-op in all cases.
 //!
-//! This crate is `![no_std]`.
+//! This crate is `![no_std]`. You can optionally turn off the `alloc` feature.
 
 extern crate core;
 use core::marker::PhantomData;
@@ -126,7 +126,13 @@ pub const fn refl<T: ?Sized>() -> TypeEq<T, T> {
 ///
 /// Note quite as trivial to implement as it might appear, since we're fighting
 /// the type checker a bit.
-pub const fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U>
+///
+/// **Note**: this function is `const` only on nightly, since it depends on the
+/// [`const_fn_trait_bound`] feature.
+///
+/// [`const_fn_trait_bound`]: https://doc.rust-lang.org/stable/unstable-book/language-features/const-fn-trait-bound.html
+#[rustversion::attr(nightly, const)]
+pub fn trivial_eq<T: ?Sized, U: ?Sized>() -> TypeEq<T, U>
 where
     T: IsEqual<U>,
 {
@@ -162,6 +168,7 @@ pub fn coerce<T, U>(t: T, ev: TypeEq<T, U>) -> U {
 /// assert_eq!(*coerce_box(Box::new(42), refl()), 42);
 /// ```
 #[cfg(feature = "alloc")]
+#[rustversion::attr(nightly, doc(cfg(feature = "alloc")))]
 #[inline]
 pub fn coerce_box<T: ?Sized, U: ?Sized>(t: Box<T>, ev: TypeEq<T, U>) -> Box<U> {
     substitute::<_, _, BoxF>(t, ev)
@@ -235,7 +242,13 @@ impl<T: ?Sized> TypeEq<T, T> {
 
 impl<T: ?Sized, U: ?Sized> TypeEq<T, U> {
     /// Same as [`crate::trivial_eq`].
-    pub const fn trivial() -> Self
+    ///
+    /// **Note**: this function is `const` only on nightly, since it depends on the
+    /// [`const_fn_trait_bound`] feature.
+    ///
+    /// [`const_fn_trait_bound`]: https://doc.rust-lang.org/stable/unstable-book/language-features/const-fn-trait-bound.html
+    #[rustversion::attr(nightly, const)]
+    pub fn trivial() -> Self
     where
         T: IsEqual<U>,
     {
@@ -302,6 +315,8 @@ pub mod details {
     /// # Safety
     ///
     /// See the docs of [`consume_eq`] for further safety.
+    ///
+    /// [`consume_eq`]: Self::consume_eq
     pub unsafe trait Consumer<T: ?Sized, U: ?Sized> {
         /// The result type returned from [`Consumer::consume_eq`].
         type Result;
@@ -321,6 +336,8 @@ pub mod details {
         /// destructor, as with [`mem::forget`].
         ///
         /// [issue #20041]: https://github.com/rust-lang/rust/issues/20041
+        /// [`ptr::read`]: core::ptr::read
+        /// [`mem::forget`]: core::mem::forget
         fn consume_eq(&self) -> Self::Result
         where
             T: IsEqual<U>;
@@ -344,7 +361,7 @@ pub mod details {
 }
 
 /// [`TypeFunction`]s have the amazing property that they can be used to push the equality of a
-/// type-level argment through to an equality of the type-level result.
+/// type-level argument through to an equality of the type-level result.
 ///
 /// In this crate, helper structs are defined that implement `TypeFunction` with various resulting
 /// types. These structs are then supposed to be passed to [`substitute`], [`TypeEq::substitute`]
@@ -381,6 +398,7 @@ pub mod type_functions {
     }
     /// The [`TypeFunction`] `ApF<BoxF, A> == Box<A>`
     #[cfg(feature = "alloc")]
+    #[rustversion::attr(nightly, doc(cfg(feature = "alloc")))]
     pub struct BoxF;
     #[cfg(feature = "alloc")]
     impl<A: ?Sized> TypeFunction<A> for BoxF {
@@ -461,7 +479,7 @@ mod kernel {
         let ref_c: &dyn Consumer<T, U, Result = C::Result> = the_c.deref();
         let tref_c: &dyn Consumer<T, T, Result = C::Result> =
             unsafe { core::mem::transmute(ref_c) };
-        <dyn Consumer<T, T, Result = C::Result> as Consumer<T, T>>::consume_eq(tref_c)
+        tref_c.consume_eq()
     }
 }
 
